@@ -1,242 +1,499 @@
-import React, { useState, useEffect, useRef } from "react";
-import * as tf from "@tensorflow/tfjs";
-import * as mobilenet from "@tensorflow-models/mobilenet";
-
-const MUSIC_CATEGORIES = {
-  ethnic: {
-    label: "Ethnic/Traditional",
-    description:
-      "Traditional or ethnic dressing like sari, kurta, folk wear.",
-    songs: [
-      { title: "Ghoomar", artist: "Hindi Folk", language: "hi" },
-      { title: "Laung Gawacha", artist: "Punjabi Folk", language: "pa" },
-      { title: "Vaathi Coming", artist: "Tamil Folk", language: "ta" },
-      { title: "Zingaat", artist: "Marathi Pop", language: "mr" },
-      { title: "Jimikki Kammal", artist: "Malayalam", language: "ml" },
-      { title: "Shape of You", artist: "Ed Sheeran", language: "en" },
-    ],
-  },
-  aesthetic: {
-    label: "Aesthetic/Soft",
-    description: "Pastel tones, makeup, soft and chill mood.",
-    songs: [
-      { title: "See You Again - LoFi", artist: "Wiz Khalifa", language: "en" },
-      { title: "Khwaab", artist: "Hindi Indie", language: "hi" },
-      { title: "Samayama", artist: "Telugu Chill", language: "te" },
-      { title: "Malare (LoFi)", artist: "Malayalam", language: "ml" },
-      { title: "Someone Like You", artist: "Adele", language: "en" },
-    ],
-  },
-  rock: {
-    label: "Rock/Grunge",
-    description:
-      "Dark clothing, leather jackets, and edgy style.",
-    songs: [
-      { title: "Rock On!!", artist: "Hindi Rock", language: "hi" },
-      { title: "Naa Ready", artist: "Tamil Rock Kuthu", language: "ta" },
-      { title: "Sadda Haq", artist: "Hindi Rock", language: "hi" },
-      { title: "Kannada Gothilla", artist: "Kannada Alt Rock", language: "kn" },
-      { title: "Smells Like Teen Spirit", artist: "Nirvana", language: "en" },
-    ],
-  },
-  dance: {
-    label: "Dance/Club",
-    description: "Energetic dance, stage environment, party mood.",
-    songs: [
-      { title: "Ghungroo", artist: "Hindi Dance Pop", language: "hi" },
-      { title: "Butta Bomma", artist: "Telugu Dance", language: "te" },
-      { title: "Arabic Kuthu", artist: "Tamil Dance", language: "ta" },
-      { title: "The Humma Song", artist: "Hindi EDM", language: "hi" },
-      { title: "Uptown Funk", artist: "Mark Ronson ft Bruno Mars", language: "en" },
-    ],
-  },
-  energetic: {
-    label: "Energetic/Upbeat",
-    description:
-      "Bright colors, sportswear, and lively actions.",
-    songs: [
-      { title: "Believer", artist: "Imagine Dragons", language: "en" },
-      { title: "Malhari", artist: "Hindi", language: "hi" },
-      { title: "Rowdy Baby", artist: "Tamil", language: "ta" },
-      { title: "Mind Block", artist: "Telugu", language: "te" },
-      { title: "Dheera Dheera", artist: "Kannada KGF", language: "kn" },
-    ],
-  },
-};
-
-// Utility to extract dominant colors from canvas pixels
-function getDominantColors(imageData, count = 5) {
-  const colorMap = new Map();
-  const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4 * 10) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const key = `${r},${g},${b}`;
-    colorMap.set(key, (colorMap.get(key) || 0) + 1);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Instagram Music Matcher</title>
+<style>
+  :root {
+    --color-light-bg: #f9f9f9;
+    --color-light-text: #222;
+    --color-dark-bg: #121212;
+    --color-dark-text: #e0e0e0;
+    --primary-color: #FF5722;
+    --secondary-color: #2196F3;
+    --max-width: 720px;
   }
-  // Sort by frequency and take top count
-  const sortedColors = [...colorMap.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, count)
-    .map((c) => c[0]);
-  return sortedColors;
-}
+  body[data-theme="light"] {
+    background-color: var(--color-light-bg);
+    color: var(--color-light-text);
+  }
+  body[data-theme="dark"] {
+    background-color: var(--color-dark-bg);
+    color: var(--color-dark-text);
+  }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 1rem;
+    transition: background-color 0.3s, color 0.3s;
+  }
+  .app-container {
+    max-width: var(--max-width);
+    margin: 0 auto;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: var(--primary-color);
+  }
+  button#theme-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--secondary-color);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+  }
+  button#theme-toggle:hover {
+    background-color: var(--secondary-color);
+    color: white;
+  }
+  input[type="file"] {
+    border: 2px dashed var(--primary-color);
+    border-radius: 6px;
+    padding: 1rem;
+    width: 100%;
+    cursor: pointer;
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+  }
+  .upload-section {
+    text-align: center;
+  }
+  .uploaded-image img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin-bottom: 0.25rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .loading {
+    margin: 1rem 0;
+    font-weight: 600;
+    font-style: italic;
+    color: var(--secondary-color);
+  }
+  .analysis-section h2,
+  .music-recommendations h2 {
+    margin-top: 2rem;
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 0.25rem;
+  }
+  .color-swatches {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .color-swatches li {
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+    border-radius: 6px;
+    font-family: monospace;
+    color: white;
+  }
+  .color-metrics p {
+    margin: 0.25rem 0;
+    text-align: center;
+  }
+  .ml-predictions ul {
+    list-style-type: disc;
+    padding-left: 1.5rem;
+  }
+  .music-recommendations ul.song-list {
+    list-style: none;
+    padding: 0;
+    margin-top: 0.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .song-card {
+    border: 2px solid var(--primary-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    background-color: rgba(255 87 34 / 0.1);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .song-title {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 0.2rem;
+  }
+  .song-artist, .song-language {
+    font-size: 0.85rem;
+    color: var(--secondary-color);
+  }
+  .category-desc {
+    font-style: italic;
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+  .welcome-section {
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 1.1rem;
+    color: var(--secondary-color);
+  }
+  footer {
+    text-align: center;
+    margin-top: 3rem;
+    font-size: 0.8rem;
+    color: gray;
+  }
 
-function rgbToHex(rgb) {
-  const [r, g, b] = rgb.split(",").map(Number);
-  return (
-    "#" +
-    [r, g, b]
-      .map((x) => {
-        const hex = x.toString(16);
-        return hex.length === 1 ? "0" + hex : hex;
-      })
-      .join("")
-  );
-}
+  @media (max-width: 480px) {
+    .music-recommendations ul.song-list {
+      grid-template-columns: 1fr;
+    }
+    header {
+      flex-direction: column;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+  }
+</style>
+</head>
+<body data-theme="light">
+  <div class="app-container">
+    <header>
+      <h1>Instagram Music Matcher</h1>
+      <button id="theme-toggle" aria-label="Toggle Dark/Light Mode">🌙 Dark Mode</button>
+    </header>
 
-function calculateBrightness(r, g, b) {
-  // Using formula for luminance perception: 
-  return (0.299 * r + 0.587 * g + 0.114 * b);
-}
+    <main>
+      <section class="upload-section">
+        <input
+          type="file"
+          accept="image/*"
+          id="image-upload"
+          aria-label="Upload image to analyze for music recommendation"
+        />
+        <p id="loading-indicator" class="loading" style="display:none;">Analyzing image & recommending music...</p>
+        <figure class="uploaded-image" style="display:none;">
+          <img id="uploaded-img" alt="Uploaded visual for analysis" />
+          <figcaption>Uploaded Image Preview</figcaption>
+        </figure>
+      </section>
 
-function calculateSaturation(r, g, b) {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  if(max === 0) return 0;
-  return (max - min) / max;
-}
+      <section class="analysis-section" aria-live="polite" aria-atomic="true" style="display:none;">
+        <h2>Image Analysis</h2>
+        <canvas id="hidden-canvas" style="display:none;"></canvas>
 
-function calculateColorfulness(r, g, b) {
-  // Simple approach: max-min difference
-  return Math.abs(r - g) + Math.abs(g - b) + Math.abs(b - r);
-}
+        <div class="color-info">
+          <h3>Dominant Colors</h3>
+          <ul class="color-swatches" id="color-swatches"></ul>
+        </div>
 
-export default function InstagramMusicMatcher() {
-  const [model, setModel] = useState(null);
-  const [imageSrc, setImageSrc] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [dominantColors, setDominantColors] = useState([]);
-  const [brightness, setBrightness] = useState(0);
-  const [saturation, setSaturation] = useState(0);
-  const [colorfulness, setColorfulness] = useState(0);
-  const [detectedCategory, setDetectedCategory] = useState(null);
-  const [predictions, setPredictions] = useState([]);
-  const fileInputRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [theme, setTheme] = useState("light");
+        <div class="color-metrics">
+          <p><strong>Brightness:</strong> <span id="brightness-val"></span></p>
+          <p><strong>Saturation:</strong> <span id="saturation-val"></span>%</p>
+          <p><strong>Colorfulness:</strong> <span id="colorfulness-val"></span></p>
+        </div>
 
-  useEffect(() => {
-    // Load MobileNet model
-    setLoading(true);
-    mobilenet.load()
-      .then(m => { 
-        setModel(m);
-        setLoading(false);
-      });
-  }, []);
+        <div class="ml-predictions" aria-live="polite" aria-atomic="true">
+          <h3>Detected Objects / Themes</h3>
+          <ul id="prediction-list"></ul>
+        </div>
 
-  useEffect(() => {
-    document.body.dataset.theme = theme;
-  }, [theme]);
+        <div class="music-recommendations">
+          <h2>Music Recommendations</h2>
+          <div id="music-category">
+            <h3 id="music-category-label"></h3>
+            <p class="category-desc" id="music-category-desc"></p>
+            <ul class="song-list" role="list" id="song-list"></ul>
+          </div>
+        </div>
+      </section>
 
-  const handleImageUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImageSrc(e.target.result);
-      setDetectedCategory(null);
-      setPredictions([]);
-      setDominantColors([]);
-      setBrightness(0);
-      setSaturation(0);
-      setColorfulness(0);
+      <section class="welcome-section" aria-live="polite" style="margin-top:2rem;">
+        <p>Please upload an image to get music recommendations matched to your Instagram post's style and mood.</p>
+      </section>
+    </main>
 
-      // After image is loaded into img element, process it
-      setTimeout(() => {
-        analyzeImage(e.target.result);
-      }, 100);
-    };
-    reader.readAsDataURL(file);
+    <footer>
+      <small>
+        © 2025 Instagram Music Matcher — AI-Powered Recommendations for Your Visual Content
+      </small>
+    </footer>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
+<script>
+  const MUSIC_CATEGORIES = {
+    ethnic: {
+      label: "Ethnic/Traditional",
+      description: "Traditional or ethnic dressing like sari, kurta, folk wear.",
+      songs: [
+        { title: "Ghoomar", artist: "Hindi Folk", language: "hi" },
+        { title: "Laung Gawacha", artist: "Punjabi Folk", language: "pa" },
+        { title: "Vaathi Coming", artist: "Tamil Folk", language: "ta" },
+        { title: "Zingaat", artist: "Marathi Pop", language: "mr" },
+        { title: "Jimikki Kammal", artist: "Malayalam", language: "ml" },
+        { title: "Shape of You", artist: "Ed Sheeran", language: "en" },
+      ],
+    },
+    aesthetic: {
+      label: "Aesthetic/Soft",
+      description: "Pastel tones, makeup, soft and chill mood.",
+      songs: [
+        { title: "See You Again - LoFi", artist: "Wiz Khalifa", language: "en" },
+        { title: "Khwaab", artist: "Hindi Indie", language: "hi" },
+        { title: "Samayama", artist: "Telugu Chill", language: "te" },
+        { title: "Malare (LoFi)", artist: "Malayalam", language: "ml" },
+        { title: "Someone Like You", artist: "Adele", language: "en" },
+      ],
+    },
+    rock: {
+      label: "Rock/Grunge",
+      description: "Dark clothing, leather jackets, and edgy style.",
+      songs: [
+        { title: "Rock On!!", artist: "Hindi Rock", language: "hi" },
+        { title: "Naa Ready", artist: "Tamil Rock Kuthu", language: "ta" },
+        { title: "Sadda Haq", artist: "Hindi Rock", language: "hi" },
+        { title: "Kannada Gothilla", artist: "Kannada Alt Rock", language: "kn" },
+        { title: "Smells Like Teen Spirit", artist: "Nirvana", language: "en" },
+      ],
+    },
+    dance: {
+      label: "Dance/Club",
+      description: "Energetic dance, stage environment, party mood.",
+      songs: [
+        { title: "Ghungroo", artist: "Hindi Dance Pop", language: "hi" },
+        { title: "Butta Bomma", artist: "Telugu Dance", language: "te" },
+        { title: "Arabic Kuthu", artist: "Tamil Dance", language: "ta" },
+        { title: "The Humma Song", artist: "Hindi EDM", language: "hi" },
+        { title: "Uptown Funk", artist: "Mark Ronson ft Bruno Mars", language: "en" },
+      ],
+    },
+    energetic: {
+      label: "Energetic/Upbeat",
+      description: "Bright colors, sportswear, and lively actions.",
+      songs: [
+        { title: "Believer", artist: "Imagine Dragons", language: "en" },
+        { title: "Malhari", artist: "Hindi", language: "hi" },
+        { title: "Rowdy Baby", artist: "Tamil", language: "ta" },
+        { title: "Mind Block", artist: "Telugu", language: "te" },
+        { title: "Dheera Dheera", artist: "Kannada KGF", language: "kn" },
+      ],
+    },
   };
 
-  const analyzeImage = async (src) => {
+  // Utility to extract dominant colors from canvas pixels
+  function getDominantColors(imageData, count = 5) {
+    const colorMap = new Map();
+    const data = imageData.data;
+    // sample every 10th pixel to reduce load
+    for (let i = 0; i < data.length; i += 40) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const key = `${r},${g},${b}`;
+      colorMap.set(key, (colorMap.get(key) || 0) + 1);
+    }
+    // Sort by frequency and take top count
+    const sortedColors = [...colorMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, count)
+      .map((c) => c[0]);
+    return sortedColors;
+  }
+
+  function rgbToHex(rgb) {
+    const [r, g, b] = rgb.split(",").map(Number);
+    return (
+      "#" +
+      [r, g, b]
+        .map((x) => {
+          const hex = x.toString(16);
+          return hex.length === 1 ? "0" + hex : hex;
+        })
+        .join("")
+    );
+  }
+
+  function calculateBrightness(r, g, b) {
+    // luminance perception formula
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
+  function calculateSaturation(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max === 0) return 0;
+    return (max - min) / max;
+  }
+
+  function calculateColorfulness(r, g, b) {
+    return Math.abs(r - g) + Math.abs(g - b) + Math.abs(b - r);
+  }
+
+  // Global state
+  let model = null;
+
+  const fileInput = document.getElementById("image-upload");
+  const imageElement = document.getElementById("uploaded-img");
+  const canvas = document.getElementById("hidden-canvas");
+  const loadingIndicator = document.getElementById("loading-indicator");
+  const uploadSection = document.querySelector(".upload-section");
+  const analysisSection = document.querySelector(".analysis-section");
+  const welcomeSection = document.querySelector(".welcome-section");
+  const colorSwatchesEl = document.getElementById("color-swatches");
+  const brightnessEl = document.getElementById("brightness-val");
+  const saturationEl = document.getElementById("saturation-val");
+  const colorfulnessEl = document.getElementById("colorfulness-val");
+  const predictionList = document.getElementById("prediction-list");
+  const musicCategoryLabel = document.getElementById("music-category-label");
+  const musicCategoryDesc = document.getElementById("music-category-desc");
+  const songList = document.getElementById("song-list");
+  const musicCategoryDiv = document.getElementById("music-category");
+  const themeToggleBtn = document.getElementById("theme-toggle");
+
+  async function loadModel() {
+    loadingIndicator.style.display = "block";
+    loadingIndicator.textContent = "Loading AI model...";
+    model = await mobilenet.load();
+    loadingIndicator.style.display = "none";
+  }
+
+  async function analyzeImage(src) {
     if (!model) return;
-    setLoading(true);
+    loadingIndicator.style.display = "block";
+    loadingIndicator.textContent = "Analyzing image & recommending music...";
+    analysisSection.style.display = "none";
+    welcomeSection.style.display = "none";
 
-    // Load image into canvas for pixel data extraction
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = src;
-    img.onload = async () => {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d");
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = src;
+      img.onload = async () => {
+        const ctx = canvas.getContext("2d");
+        const maxDim = 224;
+        let width = img.width;
+        let height = img.height;
 
-      // Resize image to max 224x224 (MobileNet input size)
-      let width = img.width;
-      let height = img.height;
-      const maxDim = 224;
-      if (width > height && width > maxDim) {
-        height = Math.round((height * maxDim) / width);
-        width = maxDim;
-      } else if (height > maxDim) {
-        width = Math.round((width * maxDim) / height);
-        height = maxDim;
-      }
-      canvas.width = width;
-      canvas.height = height;
-      ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(img, 0, 0, width, height);
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
 
-      // Extract pixel data for color analysis
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const colors = getDominantColors(imageData, 5);
-      setDominantColors(colors);
+        canvas.width = width;
+        canvas.height = height;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
 
-      // Aggregate brightness, saturation & colorfulness over dominant colors
-      let sumBrightness = 0;
-      let sumSaturation = 0;
-      let sumColorfulness = 0;
-      colors.forEach((c) => {
-        const [r, g, b] = c.split(",").map(Number);
-        sumBrightness += calculateBrightness(r, g, b);
-        sumSaturation += calculateSaturation(r, g, b);
-        sumColorfulness += calculateColorfulness(r, g, b);
-      });
-      setBrightness(Math.round(sumBrightness / colors.length));
-      setSaturation(sumSaturation / colors.length);
-      setColorfulness(sumColorfulness / colors.length);
+        // Extract pixel data for color analysis
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const colors = getDominantColors(imageData, 5);
+        renderColors(colors);
 
-      // Run MobileNet prediction
-      const predictions = await model.classify(img);
-      setPredictions(predictions);
+        // Aggregate brightness, saturation & colorfulness over dominant colors
+        let sumBrightness = 0;
+        let sumSaturation = 0;
+        let sumColorfulness = 0;
+        colors.forEach((c) => {
+          const [r, g, b] = c.split(",").map(Number);
+          sumBrightness += calculateBrightness(r, g, b);
+          sumSaturation += calculateSaturation(r, g, b);
+          sumColorfulness += calculateColorfulness(r, g, b);
+        });
+        const avgBrightness = Math.round(sumBrightness / colors.length);
+        const avgSaturation = sumSaturation / colors.length;
+        const avgColorfulness = sumColorfulness / colors.length;
 
-      // Determine category from predictions and color stats
-      const category = determineMusicCategory(predictions, sumBrightness / colors.length, sumSaturation / colors.length, sumColorfulness / colors.length);
+        brightnessEl.textContent = avgBrightness;
+        saturationEl.textContent = (avgSaturation * 100).toFixed(0);
+        colorfulnessEl.textContent = avgColorfulness;
 
-      setDetectedCategory(category);
+        // Predict objects / themes
+        const predictions = await model.classify(img);
+        renderPredictions(predictions);
 
-      setLoading(false);
-    };
-  };
+        // Determine best category
+        const category = determineMusicCategory(predictions, avgBrightness, avgSaturation, avgColorfulness);
 
-  // Logic to determine music category based on detected objects and image stats
-  const determineMusicCategory = (predictions, avgBrightness, avgSaturation, avgColorfulness) => {
-    // Helper - check if prediction class includes keywords related to categories
+        renderMusicCategory(category);
+
+        analysisSection.style.display = "block";
+        loadingIndicator.style.display = "none";
+        resolve();
+      };
+      img.onerror = () => {
+        alert("Could not load the image. Please try another.");
+        loadingIndicator.style.display = "none";
+        resolve();
+      };
+    });
+  }
+
+  function renderColors(colors) {
+    colorSwatchesEl.innerHTML = "";
+    colors.forEach((c) => {
+      const li = document.createElement("li");
+      const hex = rgbToHex(c);
+      li.style.backgroundColor = hex;
+      li.textContent = hex;
+      li.setAttribute("aria-label", `Color swatch ${hex}`);
+      colorSwatchesEl.appendChild(li);
+    });
+  }
+
+  function renderPredictions(predictions) {
+    predictionList.innerHTML = "";
+    if (predictions.length === 0) {
+      const li = document.createElement("li");
+      li.textContent = "No objects detected";
+      predictionList.appendChild(li);
+      return;
+    }
+    predictions.forEach((p) => {
+      const li = document.createElement("li");
+      li.textContent = `${p.className} - ${(p.probability * 100).toFixed(2)}%`;
+      predictionList.appendChild(li);
+    });
+  }
+
+  // Determine music category from ML predictions and image stats
+  function determineMusicCategory(predictions, avgBrightness, avgSaturation, avgColorfulness) {
     const labels = predictions.map((p) => p.className.toLowerCase());
 
     // Ethnic keywords
     if (
-      labels.some((l) => 
+      labels.some((l) =>
         ["sari", "kimono", "abaya", "cloak", "gown"].some((k) => l.includes(k))
       )
     ) {
       return "ethnic";
     }
 
-    // Aesthetic: pastel colors and makeup items
+    // Aesthetic: looks for makeup or pastel brightness range
     if (
       labels.some((l) => ["lipstick", "lip", "eyeshadow", "cosmetics", "powder"].some((k) => l.includes(k))) ||
       (avgBrightness >= 50 && avgBrightness <= 80 && avgSaturation <= 0.5)
@@ -244,7 +501,7 @@ export default function InstagramMusicMatcher() {
       return "aesthetic";
     }
 
-    // Rock if dark clothing or leather jacket references or overall dark image
+    // Rock if dark clothing or leather jacket references or low brightness
     if (
       labels.some((l) => ["leather jacket", "jacket", "motorcycle", "guitar", "bandana"].some((k) => l.includes(k))) ||
       avgBrightness < 45
@@ -268,267 +525,81 @@ export default function InstagramMusicMatcher() {
       return "energetic";
     }
 
-    // Fallback category
+    // Default fallback
     return "aesthetic";
-  };
+  }
 
-  const toggleTheme = () => {
-    setTheme(theme === "light" ? "dark" : "light");
-  };
+  function renderMusicCategory(catKey) {
+    const cat = MUSIC_CATEGORIES[catKey];
+    if (!cat) {
+      musicCategoryLabel.textContent = "";
+      musicCategoryDesc.textContent = "";
+      songList.innerHTML = "";
+      return;
+    }
+    musicCategoryLabel.textContent = cat.label;
+    musicCategoryDesc.textContent = cat.description;
+    songList.innerHTML = "";
 
-  return (
-    <div className="app-container">
-      <header>
-        <h1>Instagram Music Matcher</h1>
-        <button onClick={toggleTheme} aria-label="Toggle Dark/Light Mode" className="theme-toggle">
-          {theme === "light" ? "🌙 Dark Mode" : "☀️ Light Mode"}
-        </button>
-      </header>
+    cat.songs.forEach(({ title, artist, language }) => {
+      const li = document.createElement("li");
+      li.classList.add("song-card");
 
-      <main>
-        <section className="upload-section">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            ref={fileInputRef}
-            aria-label="Upload image"
-          />
-          {loading && <p className="loading">Analyzing image & recommending music...</p>}
-          {imageSrc && (
-            <figure className="uploaded-image">
-              <img src={imageSrc} alt="Uploaded visual for analysis" />
-              <figcaption>Uploaded Image Preview</figcaption>
-            </figure>
-          )}
-        </section>
+      const titleDiv = document.createElement("div");
+      titleDiv.className = "song-title";
+      titleDiv.textContent = title;
 
-        {imageSrc && (
-          <section className="analysis-section" aria-live="polite" aria-atomic="true">
-            <h2>Image Analysis</h2>
-            <canvas ref={canvasRef} style={{ display: "none" }}></canvas>
+      const artistDiv = document.createElement("div");
+      artistDiv.className = "song-artist";
+      artistDiv.textContent = artist;
 
-            <div className="color-info">
-              <h3>Dominant Colors</h3>
-              <ul className="color-swatches">
-                {dominantColors.map((c, i) => (
-                  <li key={i} style={{ backgroundColor: rgbToHex(c), color: "#fff" }} aria-label={`Color swatch ${rgbToHex(c)}`}>
-                    {rgbToHex(c)}
-                  </li>
-                ))}
-              </ul>
-            </div>
+      const langDiv = document.createElement("div");
+      langDiv.className = "song-language";
+      langDiv.textContent = language.toUpperCase();
 
-            <div className="color-metrics">
-              <p><strong>Brightness:</strong> {brightness}</p>
-              <p><strong>Saturation:</strong> {(saturation * 100).toFixed(0)}%</p>
-              <p><strong>Colorfulness:</strong> {colorfulness}</p>
-            </div>
+      li.appendChild(titleDiv);
+      li.appendChild(artistDiv);
+      li.appendChild(langDiv);
 
-            <div className="ml-predictions" aria-live="polite" aria-atomic="true">
-              <h3>Detected Objects / Themes</h3>
-              <ul>
-                {predictions.length === 0 && <li>No objects detected</li>}
-                {predictions.map((p, i) => (
-                  <li key={i}>{p.className} - {(p.probability * 100).toFixed(2)}%</li>
-                ))}
-              </ul>
-            </div>
+      songList.appendChild(li);
+    });
+  }
 
-            <div className="music-recommendations">
-              <h2>Music Recommendations</h2>
-              {detectedCategory && (
-                <>
-                  <h3>{MUSIC_CATEGORIES[detectedCategory].label}</h3>
-                  <p className="category-desc">{MUSIC_CATEGORIES[detectedCategory].description}</p>
-                  <ul className="song-list" role="list">
-                    {MUSIC_CATEGORIES[detectedCategory].songs.map(({ title, artist, language }, idx) => (
-                      <li key={idx} className="song-card">
-                        <div className="song-title">{title}</div>
-                        <div className="song-artist">{artist}</div>
-                        <div className="song-language">{language.toUpperCase()}</div>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          </section>
-        )}
+  // Setup file input listener
+  fileInput.addEventListener("change", (e) => {
+    if (fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      if (!file.type.startsWith("image/")) {
+        alert("Please upload a valid image.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        imageElement.src = event.target.result;
+        imageElement.parentElement.style.display = "block";
+        analyzeImage(event.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  });
 
-        {!imageSrc && !loading && (
-          <section className="welcome-section" aria-live="polite">
-            <p>Please upload an image to get music recommendations matched to your Instagram post's style and mood.</p>
-          </section>
-        )}
-      </main>
+  // Dark/light mode toggle
+  themeToggleBtn.addEventListener("click", () => {
+    const current = document.body.getAttribute("data-theme");
+    if (current === "light") {
+      document.body.setAttribute("data-theme", "dark");
+      themeToggleBtn.textContent = "☀️ Light Mode";
+    } else {
+      document.body.setAttribute("data-theme", "light");
+      themeToggleBtn.textContent = "🌙 Dark Mode";
+    }
+  });
 
-      <footer>
-        <small>
-          © 2025 Instagram Music Matcher — AI-Powered Recommendations for Your Visual Content
-        </small>
-      </footer>
+  // Load model on page load
+  window.addEventListener("load", async () => {
+    await loadModel();
+  });
+</script>
+</body>
+</html>
 
-      <style>{`
-        :root {
-          --color-light-bg: #f9f9f9;
-          --color-light-text: #222;
-          --color-dark-bg: #121212;
-          --color-dark-text: #e0e0e0;
-          --primary-color: #FF5722;
-          --secondary-color: #2196F3;
-          --max-width: 720px;
-        }
-        body[data-theme="light"] {
-          background-color: var(--color-light-bg);
-          color: var(--color-light-text);
-        }
-        body[data-theme="dark"] {
-          background-color: var(--color-dark-bg);
-          color: var(--color-dark-text);
-        }
-        .app-container {
-          max-width: var(--max-width);
-          margin: 1rem auto;
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          padding: 1rem;
-        }
-        header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 1.5rem;
-        }
-        header h1 {
-          margin: 0;
-          font-size: 1.5rem;
-          color: var(--primary-color);
-        }
-        .theme-toggle {
-          background: none;
-          border: none;
-          cursor: pointer;
-          font-size: 1rem;
-          color: var(--secondary-color);
-          padding: 0.25rem 0.5rem;
-          border-radius: 4px;
-          transition: background-color 0.3s;
-        }
-        .theme-toggle:hover {
-          background-color: var(--secondary-color);
-          color: white;
-        }
-        input[type="file"] {
-          border: 2px dashed var(--primary-color);
-          border-radius: 6px;
-          padding: 1rem;
-          width: 100%;
-          cursor: pointer;
-          color: var(--primary-color);
-          font-weight: 600;
-          font-size: 1rem;
-          margin-bottom: 1rem;
-        }
-        .upload-section {
-          text-align: center;
-        }
-        .uploaded-image img {
-          max-width: 100%;
-          border-radius: 8px;
-          margin-bottom: 0.25rem;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        .loading {
-          margin: 1rem 0;
-          font-weight: 600;
-          font-style: italic;
-          color: var(--secondary-color);
-        }
-        .analysis-section h2,
-        .music-recommendations h2 {
-          margin-top: 2rem;
-          border-bottom: 2px solid var(--primary-color);
-          padding-bottom: 0.25rem;
-        }
-        .color-swatches {
-          list-style: none;
-          padding: 0;
-          display: flex;
-          gap: 0.5rem;
-          margin-bottom: 1rem;
-          flex-wrap: wrap;
-        }
-        .color-swatches li {
-          width: 50px;
-          height: 50px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 0.75rem;
-          text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
-          border-radius: 6px;
-          font-family: monospace;
-        }
-        .color-metrics p {
-          margin: 0.25rem 0;
-        }
-        .ml-predictions ul {
-          list-style-type: disc;
-          padding-left: 1.5rem;
-        }
-        .music-recommendations ul.song-list {
-          list-style: none;
-          padding: 0;
-          margin-top: 0.5rem;
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 0.75rem;
-        }
-        .song-card {
-          border: 2px solid var(--primary-color);
-          border-radius: 8px;
-          padding: 0.75rem 1rem;
-          background-color: rgba(255 87 34 / 0.1);
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-        }
-        .song-title {
-          font-weight: 700;
-          font-size: 1rem;
-          margin-bottom: 0.2rem;
-        }
-        .song-artist, .song-language {
-          font-size: 0.85rem;
-          color: var(--secondary-color);
-        }
-        .category-desc {
-          font-style: italic;
-          margin-bottom: 1rem;
-        }
-        .welcome-section {
-          margin-top: 2rem;
-          text-align: center;
-          font-size: 1.1rem;
-          color: var(--secondary-color);
-        }
-        footer {
-          text-align: center;
-          margin-top: 3rem;
-          font-size: 0.8rem;
-          color: gray;
-        }
-
-        @media (max-width: 480px) {
-          .music-recommendations ul.song-list {
-            grid-template-columns: 1fr;
-          }
-          header {
-            flex-direction: column;
-            gap: 0.5rem;
-          }
-        }
-      `}</style>
-    </div>
-  );
-}
